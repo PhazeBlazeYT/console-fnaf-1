@@ -1,4 +1,5 @@
 # Console Night Watch (FNAF-Inspired)
+THIS IS A DEMO ITS BAD
 
 Single-file browser-console survival demo with:
 - visible animated enemy movement through rooms
