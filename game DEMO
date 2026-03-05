@@ -1,0 +1,569 @@
+(() => {
+  const oldRoot = document.getElementById('night-watch-overlay');
+  const oldStyle = document.getElementById('night-watch-style');
+  if (oldRoot) oldRoot.remove();
+  if (oldStyle) oldStyle.remove();
+
+  const style = document.createElement('style');
+  style.id = 'night-watch-style';
+  style.textContent = `
+    @keyframes flicker { 0%,100%{opacity:.96} 52%{opacity:.83} 58%{opacity:1} }
+    @keyframes sweep { from { background-position: 0 0; } to { background-position: 190px 110px; } }
+    @keyframes blinkWarn { 0%,100%{opacity:.3} 50%{opacity:.75} }
+    @keyframes camIn { from { transform: scaleY(.03); opacity:0; } to { transform: scaleY(1); opacity:1; } }
+    @keyframes camOut { from { transform: scaleY(1); opacity:1; } to { transform: scaleY(.03); opacity:0; } }
+
+    #night-watch-overlay {
+      position: fixed; inset: 0; z-index: 2147483647;
+      display: grid; grid-template-rows: 44px 1fr 76px;
+      color: #d8dde6;
+      font-family: Verdana, Geneva, Tahoma, sans-serif;
+      background: radial-gradient(circle at center, #0d0f13, #020305 70%);
+    }
+    #nw-top {
+      display: grid; grid-template-columns: 1fr auto auto; gap: 16px; align-items: center;
+      padding: 0 12px; border-bottom: 1px solid #2e3544; background: #090c12;
+      font-size: 14px;
+    }
+    #night-title { color: #b9c6dc; letter-spacing: .7px; font-weight: 700; }
+    #clock { font-weight: 700; }
+
+    #nw-scene { position: relative; overflow: hidden; background: #05070c; }
+    #noise {
+      position: absolute; inset: 0; pointer-events: none; z-index: 30;
+      background-image:
+        linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px);
+      background-size: 3px 3px, 4px 4px;
+      animation: flicker 1.2s infinite steps(2), sweep 6s linear infinite;
+      mix-blend-mode: screen;
+    }
+
+    .panel { position: absolute; inset: 0; display: none; }
+    .panel.active { display: block; }
+
+    #office-panel { background: #020407; }
+    #office-canvas, #cam-canvas { width: 100%; height: 100%; display: block; }
+
+    #cam-panel { transform-origin: 50% 50%; }
+    #cam-panel.opening { animation: camIn .15s ease-out; }
+    #cam-panel.closing { animation: camOut .12s ease-in; }
+    #cam-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+      background: radial-gradient(circle at center, transparent 34%, rgba(0,0,0,.55) 100%);
+      z-index: 4;
+    }
+    #cam-transition {
+      position: absolute; inset: 0; pointer-events: none; z-index: 5; opacity: 0;
+      background: repeating-linear-gradient(to bottom, rgba(255,255,255,.08), rgba(255,255,255,.08) 2px, rgba(0,0,0,.16) 3px, rgba(0,0,0,.16) 6px);
+    }
+
+    #cam-hud {
+      position: absolute; top: 10px; left: 12px; z-index: 6;
+      text-shadow: 0 0 8px #000;
+      font-size: 14px;
+    }
+    #cam-name { font-size: 18px; margin-bottom: 3px; }
+
+    #cam-map {
+      position: absolute; bottom: 12px; right: 12px; z-index: 7;
+      width: 360px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    }
+    .cam-btn {
+      border: 1px solid #657189; background: #141a24; color: #dce3f1; height: 34px;
+      font-size: 12px; cursor: pointer;
+    }
+    .cam-btn.active { background: #2a3a1f; border-color: #a4dc7b; }
+
+    #office-controls {
+      position: absolute; inset: 0; pointer-events: none; z-index: 10;
+      display: grid; grid-template-columns: 112px 1fr 112px;
+    }
+    .door-stack {
+      pointer-events: auto;
+      display: grid; grid-template-rows: 1fr auto auto auto; justify-items: center; align-items: end;
+      padding: 10px 8px 12px;
+      background: linear-gradient(180deg, rgba(11,16,26,.7), rgba(7,10,16,.55));
+      border-right: 1px solid rgba(80,95,122,.45);
+    }
+    .door-stack.right { border-right: 0; border-left: 1px solid rgba(80,95,122,.45); }
+
+    .door-meter {
+      width: 78px; height: 10px; border: 1px solid #6b7588; background: #1a202c; margin-bottom: 8px;
+    }
+    .door-meter > div { height: 100%; background: linear-gradient(90deg,#bc514f,#ef8f64); width: 100%; }
+
+    .ctrl-btn {
+      width: 84px; height: 30px; margin-top: 6px;
+      border: 1px solid #67738a; background: #1b2231; color: #e0e6f4; cursor: pointer;
+      font-size: 12px;
+    }
+    .ctrl-btn.active { background: #35532a; border-color: #b0e27b; }
+
+    #center-hud {
+      pointer-events: none;
+      display: grid; grid-template-rows: auto 1fr auto; padding: 12px;
+      color: #e8edf7;
+      text-shadow: 0 0 8px #000;
+    }
+    #status { font-size: 14px; }
+    #presence { align-self: center; justify-self: center; font-size: 23px; }
+    #look-hint { justify-self: center; font-size: 12px; color: #b2bfd4; }
+
+    #powerout { position: absolute; inset: 0; pointer-events: none; background: #000; opacity: 0; z-index: 20; }
+
+    #nw-bottom {
+      display: grid; grid-template-columns: 140px 1fr 160px 90px; gap: 10px; align-items: center;
+      padding: 10px 12px; border-top: 1px solid #2e3544; background: #090c12;
+    }
+    #power-wrap { height: 18px; border: 1px solid #687791; background: #141a26; }
+    #power-fill { height: 100%; width: 100%; background: linear-gradient(90deg,#397b2a,#a9df5a); transition: width .15s linear; }
+    #usage { text-align: right; font-size: 13px; }
+    #cam-toggle, #close-btn { height: 34px; border: 1px solid #667289; background: #192132; color: #e6ebf8; cursor: pointer; }
+    #cam-toggle.active { background: #395428; }
+    #close-btn { background: #2b1a1e; border-color: #875660; }
+
+    #result {
+      position: absolute; inset: 0; display: none; place-items: center; z-index: 40;
+      background: rgba(0,0,0,.86); text-align: center;
+    }
+    #result.show { display: grid; }
+    #result h1 { margin: 0 0 8px; font-size: 44px; }
+
+    #warn {
+      position: absolute; top: 8px; right: 10px; z-index: 15;
+      color: #ff8b8b; font-size: 12px; opacity: 0;
+      animation: blinkWarn .5s infinite;
+    }
+  `;
+  document.head.appendChild(style);
+
+  const root = document.createElement('div');
+  root.id = 'night-watch-overlay';
+  root.innerHTML = `
+    <div id="nw-top">
+      <div id="night-title">NIGHT WATCH // ORIGINAL</div>
+      <div id="clock">12 AM</div>
+      <div id="power-label">Power: 100%</div>
+    </div>
+    <div id="nw-scene">
+      <div id="noise"></div>
+      <div id="warn">DOOR BREACH RISK</div>
+      <div id="office-panel" class="panel active"><canvas id="office-canvas" width="1280" height="720"></canvas></div>
+      <div id="cam-panel" class="panel"><canvas id="cam-canvas" width="1280" height="720"></canvas>
+        <div id="cam-transition"></div>
+        <div id="cam-overlay"></div>
+        <div id="cam-hud"><div id="cam-name"></div><div id="cam-detected"></div></div>
+        <div id="cam-map"></div>
+      </div>
+      <div id="office-controls">
+        <div class="door-stack left">
+          <div class="door-meter"><div id="left-door-health"></div></div>
+          <button id="left-door-btn" class="ctrl-btn">LEFT DOOR</button>
+          <button id="left-light-btn" class="ctrl-btn">LEFT LIGHT</button>
+          <div id="left-door-text" style="font-size:11px;color:#c7d2e6;margin-top:6px;">OPEN</div>
+        </div>
+        <div id="center-hud">
+          <div id="status">You are in the office.</div>
+          <div id="presence">Listening...</div>
+          <div id="look-hint">WASD / Arrow Keys to look left-right | Space to center</div>
+        </div>
+        <div class="door-stack right">
+          <div class="door-meter"><div id="right-door-health"></div></div>
+          <button id="right-door-btn" class="ctrl-btn">RIGHT DOOR</button>
+          <button id="right-light-btn" class="ctrl-btn">RIGHT LIGHT</button>
+          <div id="right-door-text" style="font-size:11px;color:#c7d2e6;margin-top:6px;">OPEN</div>
+        </div>
+      </div>
+      <div id="powerout"></div>
+      <div id="result"><div><h1 id="result-title"></h1><p id="result-text"></p><button id="restart" class="ctrl-btn" style="width:110px;height:36px;">Restart</button></div></div>
+    </div>
+    <div id="nw-bottom">
+      <button id="cam-toggle">Open Cameras</button>
+      <div id="power-wrap"><div id="power-fill"></div></div>
+      <div id="usage">Usage: 1x</div>
+      <button id="close-btn">Close</button>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const rooms = [
+    ['stage', 'Main Stage'],
+    ['dining', 'Dining Room'],
+    ['backstage', 'Backstage'],
+    ['kitchen', 'Kitchen'],
+    ['west', 'West Hall'],
+    ['east', 'East Hall'],
+    ['leftDoor', 'Left Door'],
+    ['rightDoor', 'Right Door'],
+    ['service', 'Service Room']
+  ];
+
+  const routes = {
+    A: ['stage', 'dining', 'west', 'leftDoor'],
+    B: ['stage', 'backstage', 'east', 'rightDoor'],
+    C: ['dining', 'kitchen', 'service', 'west', 'leftDoor']
+  };
+
+  const roomTheme = {
+    stage: { top: '#434a59', mid: '#141a23', floor: '#242b39', props: 'curtain' },
+    dining: { top: '#5b3f42', mid: '#241319', floor: '#332128', props: 'tables' },
+    backstage: { top: '#364661', mid: '#141a2a', floor: '#253349', props: 'shelves' },
+    kitchen: { top: '#565b63', mid: '#1f232a', floor: '#3b4049', props: 'kitchen' },
+    west: { top: '#30495d', mid: '#101b26', floor: '#203547', props: 'hall' },
+    east: { top: '#654636', mid: '#23170f', floor: '#3b2920', props: 'hall' },
+    leftDoor: { top: '#3c4f6f', mid: '#101b2b', floor: '#273b56', props: 'door' },
+    rightDoor: { top: '#6f4f3f', mid: '#24150f', floor: '#4a3125', props: 'door' },
+    service: { top: '#5b5450', mid: '#221e1a', floor: '#3a3430', props: 'closet' }
+  };
+
+  const state = {
+    t: 0,
+    duration: 6 * 60 * 1000,
+    over: false,
+    power: 100,
+    camOpen: false,
+    camTransitionMs: 0,
+    camGlitchMs: 0,
+    camIdx: 0,
+    look: 0,
+    leftDoor: false,
+    rightDoor: false,
+    leftLight: false,
+    rightLight: false,
+    leftDoorHealth: 100,
+    rightDoorHealth: 100,
+    leftShake: 0,
+    rightShake: 0,
+    jumpFlash: 0,
+    entities: {
+      A: { seg: 0, p: 0, speed: 0.000068, phase: 0 },
+      B: { seg: 0, p: 0, speed: 0.00006, phase: 0.8 },
+      C: { seg: 0, p: 0, speed: 0.000052, phase: 1.5 }
+    }
+  };
+
+  const $ = (s) => root.querySelector(s);
+  const el = {
+    clock: $('#clock'), powerLabel: $('#power-label'), powerFill: $('#power-fill'), usage: $('#usage'),
+    camToggle: $('#cam-toggle'), officePanel: $('#office-panel'), camPanel: $('#cam-panel'),
+    camTransition: $('#cam-transition'), camName: $('#cam-name'), camDetected: $('#cam-detected'), camMap: $('#cam-map'),
+    status: $('#status'), presence: $('#presence'), warn: $('#warn'), powerout: $('#powerout'),
+    leftDoorBtn: $('#left-door-btn'), rightDoorBtn: $('#right-door-btn'), leftLightBtn: $('#left-light-btn'), rightLightBtn: $('#right-light-btn'),
+    leftDoorText: $('#left-door-text'), rightDoorText: $('#right-door-text'),
+    leftDoorHealth: $('#left-door-health'), rightDoorHealth: $('#right-door-health'),
+    officeCanvas: $('#office-canvas'), camCanvas: $('#cam-canvas'),
+    result: $('#result'), resultTitle: $('#result-title'), resultText: $('#result-text')
+  };
+
+  function texture(h) {
+    const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+    const x = c.getContext('2d');
+    const g = x.createRadialGradient(64, 46, 8, 64, 70, 66);
+    g.addColorStop(0, `hsl(${h} 28% 68%)`); g.addColorStop(1, `hsl(${h} 25% 36%)`);
+    x.fillStyle = g; x.beginPath(); x.ellipse(64, 68, 46, 52, 0, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#12151d'; x.beginPath(); x.arc(51, 54, 10, 0, Math.PI * 2); x.arc(77, 54, 10, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#ff8f92'; x.beginPath(); x.arc(51, 54, 3, 0, Math.PI * 2); x.arc(77, 54, 3, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = '#f2f6ff'; x.lineWidth = 3; x.beginPath(); x.moveTo(42, 87); x.quadraticCurveTo(64, 98, 86, 87); x.stroke();
+    const img = new Image(); img.src = c.toDataURL('image/png'); return img;
+  }
+  const monsterTex = { A: texture(210), B: texture(26), C: texture(130) };
+
+  rooms.forEach(([, name], idx) => {
+    const b = document.createElement('button');
+    b.className = 'cam-btn'; b.textContent = name;
+    b.onclick = () => { state.camIdx = idx; state.camGlitchMs = 220; draw(); };
+    el.camMap.appendChild(b);
+  });
+
+  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  const usage = () => 1 + (state.camOpen ? 1 : 0) + (state.leftDoor ? 1 : 0) + (state.rightDoor ? 1 : 0) + (state.leftLight ? 1 : 0) + (state.rightLight ? 1 : 0);
+  const roomOf = (k) => routes[k][state.entities[k].seg];
+  const inRoom = (r) => Object.keys(state.entities).filter((k) => roomOf(k) === r);
+
+  function drawRoomBase(ctx, w, h, roomId, t, look = 0, forOffice = false) {
+    const theme = roomTheme[roomId] || roomTheme.stage;
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, theme.top); grad.addColorStop(.62, theme.mid); grad.addColorStop(1, theme.floor);
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+
+    const centerX = w / 2 + look * 220;
+    const horizon = h * 0.33;
+    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+    for (let i = -8; i <= 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(centerX + i * 10, horizon);
+      ctx.lineTo(centerX + i * 98, h);
+      ctx.stroke();
+    }
+    for (let j = 0; j < 7; j++) {
+      const y = horizon + 10 + (h - (horizon + 10)) * (j / 6);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    const fanX = centerX + Math.sin(t * 0.0008) * 6;
+    const fanY = h * 0.2;
+    ctx.strokeStyle = 'rgba(255,255,255,.07)';
+    ctx.beginPath(); ctx.arc(fanX, fanY, 18, 0, Math.PI * 2); ctx.stroke();
+    for (let i = 0; i < 3; i++) {
+      const a = t * 0.01 + i * (Math.PI * 2 / 3);
+      ctx.beginPath(); ctx.moveTo(fanX, fanY); ctx.lineTo(fanX + Math.cos(a) * 28, fanY + Math.sin(a) * 12); ctx.stroke();
+    }
+
+    ctx.fillStyle = 'rgba(0,0,0,.28)';
+    if (theme.props === 'tables') {
+      for (let i = 0; i < 3; i++) ctx.fillRect(w * (0.1 + i * 0.26), h * 0.62, 140, 56);
+    } else if (theme.props === 'kitchen') {
+      ctx.fillRect(w * 0.1, h * 0.56, w * 0.8, 24); ctx.fillRect(w * 0.14, h * 0.62, w * 0.72, 60);
+    } else if (theme.props === 'shelves') {
+      ctx.fillRect(w * 0.12, h * 0.5, 120, 170); ctx.fillRect(w * 0.74, h * 0.48, 130, 180);
+    } else if (theme.props === 'door') {
+      ctx.fillRect(w * 0.42, h * 0.37, w * 0.16, h * 0.4);
+    } else if (theme.props === 'closet') {
+      ctx.fillRect(w * 0.25, h * 0.5, w * 0.5, h * 0.22);
+    } else {
+      ctx.fillRect(w * 0.44, h * 0.44, w * 0.13, h * 0.32);
+    }
+
+    if (forOffice) {
+      // door frames left/right
+      ctx.fillStyle = '#121927';
+      ctx.fillRect(0, 0, 130, h);
+      ctx.fillRect(w - 130, 0, 130, h);
+    }
+  }
+
+  function drawMonster(ctx, key, x, y, s, t, aggressive = false) {
+    const img = monsterTex[key];
+    const w = 78 * s, h = 96 * s;
+    const bob = Math.sin(t * 0.01 + s) * 3;
+    ctx.save();
+    ctx.translate(x, y + bob);
+    ctx.globalAlpha = aggressive ? 0.98 : 0.88;
+    ctx.drawImage(img, -w / 2, -h * 0.9, w, h);
+    ctx.fillStyle = aggressive ? 'rgba(255,60,60,.2)' : 'rgba(255,255,255,.08)';
+    ctx.beginPath(); ctx.ellipse(0, h * 0.1, w * 0.45, h * 0.15, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawDoorsInOffice(ctx, w, h) {
+    const leftX = 60 + state.leftShake * Math.sin(state.t * 0.05);
+    const rightX = w - 60 + state.rightShake * Math.sin(state.t * 0.05 + 1.2);
+
+    ctx.save();
+    // left door slab animation
+    ctx.fillStyle = '#2a3242';
+    const leftOpenAmt = state.leftDoor ? 0 : 1;
+    ctx.fillRect(leftX - 50, h * 0.34 + (1 - leftOpenAmt) * 170, 88, 230 * leftOpenAmt);
+    if (state.leftLight) { ctx.fillStyle = 'rgba(255,236,170,.25)'; ctx.fillRect(120, h * .25, 230, h * .62); }
+
+    // right door slab
+    const rightOpenAmt = state.rightDoor ? 0 : 1;
+    ctx.fillStyle = '#2a3242';
+    ctx.fillRect(rightX - 38, h * 0.34 + (1 - rightOpenAmt) * 170, 88, 230 * rightOpenAmt);
+    if (state.rightLight) { ctx.fillStyle = 'rgba(255,236,170,.25)'; ctx.fillRect(w - 350, h * .25, 230, h * .62); }
+    ctx.restore();
+
+    inRoom('leftDoor').forEach((k, i) => drawMonster(ctx, k, 190 + i * 40, h * 0.67, 1.1, state.t + i * 120, true));
+    inRoom('rightDoor').forEach((k, i) => drawMonster(ctx, w - 190 - i * 40, h * 0.67, 1.1, state.t + i * 140, true));
+  }
+
+  function drawCamera() {
+    const ctx = el.camCanvas.getContext('2d');
+    const w = el.camCanvas.width, h = el.camCanvas.height;
+    const [rid] = rooms[state.camIdx];
+    drawRoomBase(ctx, w, h, rid, state.t, 0, false);
+
+    const anchors = {
+      stage: [[.28,.63],[.52,.59],[.74,.63]], dining: [[.25,.74],[.5,.68],[.72,.74]],
+      backstage: [[.2,.72],[.54,.66],[.76,.72]], kitchen: [[.3,.73],[.57,.71],[.74,.74]], west: [[.35,.77],[.58,.66]],
+      east: [[.26,.57],[.52,.66],[.76,.79]], leftDoor: [[.5,.78]], rightDoor: [[.5,.78]], service: [[.52,.75]]
+    };
+    const pts = anchors[rid] || [[.5,.72]];
+    const entities = inRoom(rid);
+    entities.forEach((k, i) => {
+      const p = pts[i % pts.length];
+      drawMonster(ctx, k, p[0] * w + Math.sin(state.t * .001 + i) * 12, p[1] * h, 0.75 + (1 - p[1] * .55), state.t + i * 240);
+    });
+
+    if (!entities.length) {
+      ctx.fillStyle = 'rgba(255,255,255,.24)'; ctx.font = '18px monospace';
+      ctx.fillText('NO MOTION', 16, h - 22);
+    }
+
+    const scan = (state.t * .14) % h;
+    ctx.fillStyle = 'rgba(180,255,190,.05)'; ctx.fillRect(0, scan, w, 8);
+    if (Math.random() < .05 || state.camGlitchMs > 0) { ctx.fillStyle = 'rgba(255,255,255,.09)'; ctx.fillRect(0, 0, w, h); }
+  }
+
+  function drawOffice() {
+    const ctx = el.officeCanvas.getContext('2d');
+    const w = el.officeCanvas.width, h = el.officeCanvas.height;
+    drawRoomBase(ctx, w, h, 'stage', state.t, state.look, true);
+    drawDoorsInOffice(ctx, w, h);
+
+    if (state.power < 15) { ctx.fillStyle = `rgba(255,255,210,${Math.random() * .08})`; ctx.fillRect(0, 0, w, h); }
+    if (state.jumpFlash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(.7, state.jumpFlash / 900)})`; ctx.fillRect(0, 0, w, h); state.jumpFlash = Math.max(0, state.jumpFlash - 20); }
+  }
+
+  function lose(msg) {
+    state.over = true; state.jumpFlash = 900;
+    el.resultTitle.textContent = 'GAME OVER';
+    el.resultText.textContent = msg;
+    el.result.classList.add('show');
+  }
+  function win() {
+    state.over = true;
+    el.resultTitle.textContent = '6 AM';
+    el.resultText.textContent = 'You survived the night.';
+    el.result.classList.add('show');
+  }
+
+  function update(dt) {
+    if (state.over) return;
+    state.t += dt;
+    state.camTransitionMs = Math.max(0, state.camTransitionMs - dt);
+    state.camGlitchMs = Math.max(0, state.camGlitchMs - dt);
+    state.leftShake = Math.max(0, state.leftShake - dt * .016);
+    state.rightShake = Math.max(0, state.rightShake - dt * .016);
+
+    const p = clamp(state.t / state.duration, 0, 1);
+    const diff = 1 + p * .9;
+    state.power = Math.max(0, state.power - (0.043 * usage() * dt) / 1000);
+
+    Object.entries(state.entities).forEach(([k, e]) => {
+      if (e.seg >= routes[k].length - 1) return;
+      e.p += e.speed * diff * dt;
+      if (e.p >= 1) {
+        e.p = 0; e.seg += 1;
+        if (routes[k][e.seg] === 'leftDoor') state.leftShake = 8;
+        if (routes[k][e.seg] === 'rightDoor') state.rightShake = 8;
+      }
+    });
+
+    const leftThreat = inRoom('leftDoor').length;
+    const rightThreat = inRoom('rightDoor').length;
+
+    if (leftThreat && state.leftDoor) {
+      state.leftDoorHealth = Math.max(0, state.leftDoorHealth - leftThreat * (9 + p * 12) * dt / 1000);
+      state.leftShake = Math.max(state.leftShake, 5);
+      if (state.leftDoorHealth <= 0) state.leftDoor = false;
+    }
+    if (rightThreat && state.rightDoor) {
+      state.rightDoorHealth = Math.max(0, state.rightDoorHealth - rightThreat * (9 + p * 12) * dt / 1000);
+      state.rightShake = Math.max(state.rightShake, 5);
+      if (state.rightDoorHealth <= 0) state.rightDoor = false;
+    }
+
+    const attackChance = 0.08 + p * .18;
+    if (leftThreat && !state.leftDoor && Math.random() < attackChance * dt / 1000) lose('A monster reached you from the left.');
+    if (rightThreat && !state.rightDoor && Math.random() < attackChance * dt / 1000) lose('A monster reached you from the right.');
+
+    if (state.power <= 0) {
+      state.leftDoor = false; state.rightDoor = false; state.leftLight = false; state.rightLight = false;
+      if (Math.random() < (0.03 + p * .08) * dt / 1000) lose('Power out. Something moved in the dark.');
+    }
+    if (p >= 1) win();
+  }
+
+  function draw() {
+    const p = clamp(state.t / state.duration, 0, 1);
+    const hour = Math.min(6, 12 + Math.floor(p * 6));
+    el.clock.textContent = `${hour > 12 ? hour - 12 : hour} AM`;
+    el.powerLabel.textContent = `Power: ${Math.ceil(state.power)}%`;
+    el.powerFill.style.width = `${state.power}%`;
+    el.usage.textContent = `Usage: ${usage()}x`;
+
+    el.officePanel.classList.toggle('active', !state.camOpen);
+    el.camPanel.classList.toggle('active', state.camOpen);
+    el.camPanel.classList.toggle('opening', state.camOpen && state.camTransitionMs > 0);
+    el.camPanel.classList.toggle('closing', !state.camOpen && state.camTransitionMs > 0);
+    el.camToggle.classList.toggle('active', state.camOpen);
+    el.camToggle.textContent = state.camOpen ? 'Close Cameras' : 'Open Cameras';
+    el.camTransition.style.opacity = (state.camTransitionMs / 220).toFixed(2);
+
+    el.leftDoorBtn.classList.toggle('active', state.leftDoor);
+    el.rightDoorBtn.classList.toggle('active', state.rightDoor);
+    el.leftLightBtn.classList.toggle('active', state.leftLight);
+    el.rightLightBtn.classList.toggle('active', state.rightLight);
+
+    el.leftDoorText.textContent = state.leftDoor ? 'CLOSED' : 'OPEN';
+    el.rightDoorText.textContent = state.rightDoor ? 'CLOSED' : 'OPEN';
+    el.leftDoorHealth.style.width = `${state.leftDoorHealth}%`;
+    el.rightDoorHealth.style.width = `${state.rightDoorHealth}%`;
+
+    const leftThreat = inRoom('leftDoor');
+    const rightThreat = inRoom('rightDoor');
+    el.warn.style.opacity = (leftThreat.length || rightThreat.length) ? '1' : '0';
+    if (leftThreat.length && state.leftLight) {
+      el.presence.textContent = `LEFT DOOR CONTACT (${leftThreat.join(', ')})`;
+    } else if (rightThreat.length && state.rightLight) {
+      el.presence.textContent = `RIGHT DOOR CONTACT (${rightThreat.join(', ')})`;
+    } else {
+      el.presence.textContent = 'Listening...';
+    }
+
+    el.status.textContent = state.power <= 0 ? 'Power is out. Systems offline.' : state.camOpen ? 'Viewing camera monitor...' : 'You are in the office.';
+    el.powerout.style.opacity = state.power <= 0 ? '.18' : '0';
+
+    const [rid, rname] = rooms[state.camIdx];
+    const entities = inRoom(rid);
+    el.camName.textContent = `Camera: ${rname}`;
+    el.camDetected.textContent = entities.length ? `Detected: ${entities.join(', ')}` : 'Detected: none';
+    [...el.camMap.children].forEach((b, i) => b.classList.toggle('active', i === state.camIdx));
+
+    drawOffice();
+    drawCamera();
+  }
+
+  function reset() {
+    state.t = 0; state.over = false; state.power = 100;
+    state.camOpen = false; state.camTransitionMs = 0; state.camGlitchMs = 0; state.camIdx = 0;
+    state.look = 0;
+    state.leftDoor = false; state.rightDoor = false; state.leftLight = false; state.rightLight = false;
+    state.leftDoorHealth = 100; state.rightDoorHealth = 100; state.leftShake = 0; state.rightShake = 0;
+    state.jumpFlash = 0;
+    Object.values(state.entities).forEach((e) => { e.seg = 0; e.p = 0; });
+    el.result.classList.remove('show');
+    draw();
+  }
+
+  function adjustLook(dir) {
+    state.look = clamp(state.look + dir, -1, 1);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (state.over) return;
+    if (e.key === 'a' || e.key === 'ArrowLeft') adjustLook(-0.08);
+    if (e.key === 'd' || e.key === 'ArrowRight') adjustLook(0.08);
+    if (e.key === 'w' || e.key === 'ArrowUp') adjustLook(-0.04);
+    if (e.key === 's' || e.key === 'ArrowDown') adjustLook(0.04);
+    if (e.key === ' ') state.look *= 0.35;
+  });
+
+  el.leftDoorBtn.onclick = () => { if (!state.over && state.power > 0) state.leftDoor = !state.leftDoor; };
+  el.rightDoorBtn.onclick = () => { if (!state.over && state.power > 0) state.rightDoor = !state.rightDoor; };
+  el.leftLightBtn.onclick = () => { if (!state.over && state.power > 0) state.leftLight = !state.leftLight; };
+  el.rightLightBtn.onclick = () => { if (!state.over && state.power > 0) state.rightLight = !state.rightLight; };
+  el.camToggle.onclick = () => {
+    if (!state.over && state.power > 0) {
+      state.camOpen = !state.camOpen;
+      state.camTransitionMs = 220;
+      state.camGlitchMs = 180;
+    }
+  };
+  $('#restart').onclick = reset;
+  $('#close-btn').onclick = () => { root.remove(); style.remove(); };
+
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(120, now - last);
+    last = now;
+    update(dt);
+    draw();
+    if (document.body.contains(root)) requestAnimationFrame(loop);
+  }
+
+  reset();
+  requestAnimationFrame(loop);
+})();
