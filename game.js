@@ -235,7 +235,8 @@
     bonnie: '#8e77ff',
     chica: '#ffc153',
     freddy: '#b08a57',
-    foxy: '#e06a5f'
+    foxy: '#e06a5f',
+    golden: '#d2b14a'
   };
 
   const roamGraph = {
@@ -299,6 +300,7 @@
     cameraStallMs: 0,
     camDowntimeMs: 0,
     foxySprintMs: 0,
+    goldenFreddyMs: 0,
     entities: {
       bonnie: { room: 'stage', ai: 0, moveTimer: 3500, wakeDelayMs: 0, wakeAnimMs: 0, active: false, doorSeenMs: 0, lookPhase: 0 },
       chica: { room: 'stage', ai: 0, moveTimer: 3800, wakeDelayMs: 0, wakeAnimMs: 0, active: false, doorSeenMs: 0, lookPhase: 0 },
@@ -381,24 +383,72 @@
   function drawRoomBase(ctx, w, h, roomId, look = 0) {
     const [top, mid, floor] = roomPalette(roomId);
     const pan = look * 80;
+    const horizonY = h * 0.38;
+
     ctx.save();
     ctx.translate(pan, 0);
-    ctx.fillStyle = top; ctx.fillRect(-90, 0, w + 180, h * 0.42);
-    ctx.fillStyle = mid; ctx.fillRect(-90, h * 0.42, w + 180, h * 0.23);
-    ctx.fillStyle = floor; ctx.fillRect(-90, h * 0.65, w + 180, h * 0.35);
 
-    for (let i = 0; i < 8; i += 1) {
-      const x = i * 190 + ((state.t * 0.02) % 190) - 140;
-      ctx.fillStyle = 'rgba(240,245,255,.05)';
-      ctx.fillRect(x, h * 0.45, 28, h * 0.43);
+    const ceilGrad = ctx.createLinearGradient(0, 0, 0, horizonY);
+    ceilGrad.addColorStop(0, top);
+    ceilGrad.addColorStop(1, '#11161f');
+    ctx.fillStyle = ceilGrad;
+    ctx.fillRect(-120, 0, w + 240, horizonY);
+
+    const wallGrad = ctx.createLinearGradient(0, horizonY, 0, h * 0.66);
+    wallGrad.addColorStop(0, mid);
+    wallGrad.addColorStop(1, '#121923');
+    ctx.fillStyle = wallGrad;
+    ctx.fillRect(-120, horizonY, w + 240, h * 0.28);
+
+    const floorGrad = ctx.createLinearGradient(0, h * 0.62, 0, h);
+    floorGrad.addColorStop(0, '#171f2d');
+    floorGrad.addColorStop(1, floor);
+    ctx.fillStyle = floorGrad;
+    ctx.fillRect(-120, h * 0.62, w + 240, h * 0.4);
+
+    const vanishingX = w * 0.5;
+    ctx.strokeStyle = 'rgba(220,230,255,.07)';
+    ctx.lineWidth = 1;
+    for (let i = -7; i <= 7; i += 1) {
+      const x = vanishingX + i * 120 + ((state.t * 0.01) % 120);
+      ctx.beginPath();
+      ctx.moveTo(x, h);
+      ctx.lineTo(vanishingX + i * 10, horizonY + 6);
+      ctx.stroke();
     }
 
-    ctx.fillStyle = 'rgba(0,0,0,.22)';
-    for (let y = h * 0.66; y < h; y += 16) {
-      ctx.fillRect(-60, y, w + 120, 2);
+    for (let i = 0; i < 9; i += 1) {
+      const t = i / 8;
+      const y = h * (0.64 + t * t * 0.34);
+      const alpha = 0.14 - t * 0.1;
+      ctx.strokeStyle = `rgba(200,215,245,${alpha.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.moveTo(-100 + t * 180, y);
+      ctx.lineTo(w + 100 - t * 180, y);
+      ctx.stroke();
     }
+
+    ctx.fillStyle = 'rgba(255,255,255,.03)';
+    for (let i = 0; i < 6; i += 1) {
+      const wx = i * 260 + ((state.t * 0.015) % 260) - 160;
+      ctx.fillRect(wx, h * 0.42, 30, h * 0.23);
+    }
+
+    const leftShadow = ctx.createLinearGradient(0, 0, w * 0.2, 0);
+    leftShadow.addColorStop(0, 'rgba(0,0,0,.34)');
+    leftShadow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = leftShadow;
+    ctx.fillRect(-120, 0, w * 0.26, h);
+
+    const rightShadow = ctx.createLinearGradient(w, 0, w * 0.8, 0);
+    rightShadow.addColorStop(0, 'rgba(0,0,0,.34)');
+    rightShadow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rightShadow;
+    ctx.fillRect(w * 0.74, 0, w * 0.32, h);
+
     ctx.restore();
   }
+
 
   function drawPoster(ctx, x, y, w, h, title, tint) {
     ctx.fillStyle = '#11151d';
@@ -684,6 +734,12 @@
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, w, h);
 
+    const depthFog = ctx.createLinearGradient(0, h * 0.25, 0, h);
+    depthFog.addColorStop(0, 'rgba(0,0,0,0)');
+    depthFog.addColorStop(1, 'rgba(0,0,0,.24)');
+    ctx.fillStyle = depthFog;
+    ctx.fillRect(0, 0, w, h);
+
     if (state.power < 18) {
       ctx.fillStyle = `rgba(255,255,210,${Math.random() * 0.11})`;
       ctx.fillRect(0, 0, w, h);
@@ -806,6 +862,12 @@
       drawEntity(ctx, x, y, 1.2 - i * 0.08, name, true);
     });
 
+    if (state.goldenFreddyMs > 0 && (roomId === 'stage' || roomId === 'office')) {
+      const fx = roomId === 'stage' ? w * 0.68 : w * 0.53;
+      const fy = roomId === 'stage' ? h * 0.68 : h * 0.72;
+      drawEntity(ctx, fx, fy, 1.24, 'golden', true);
+    }
+
     if (roomId === 'pirate') {
       const stage = state.entities.foxy.coveStage;
       const foxyText = ['Curtain closed', 'Movement heard', 'Peeking out', 'Cove empty'][stage];
@@ -836,6 +898,16 @@
     ctx.fillStyle = camVignette;
     ctx.fillRect(0, 0, w, h);
 
+    ctx.strokeStyle = 'rgba(180,210,255,.14)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(8, 8, w - 16, h - 16);
+
+    const barrelShade = ctx.createRadialGradient(w * 0.5, h * 0.5, w * 0.35, w * 0.5, h * 0.5, w * 0.62);
+    barrelShade.addColorStop(0, 'rgba(0,0,0,0)');
+    barrelShade.addColorStop(1, 'rgba(0,0,0,.22)');
+    ctx.fillStyle = barrelShade;
+    ctx.fillRect(0, 0, w, h);
+
     if (Math.random() < 0.06 || state.camGlitchMs > 0) {
       ctx.fillStyle = 'rgba(255,255,255,.09)';
       ctx.fillRect(0, 0, w, h);
@@ -854,7 +926,7 @@
   function win() {
     if (state.over) return;
     state.over = true;
-    const nextNight = Math.min(6, state.night + 1);
+    const nextNight = Math.min(5, state.night + 1);
     el.resultTitle.textContent = '6 AM';
     el.resultText.textContent = `You survived Night ${state.night}. Click restart for Night ${nextNight}.`;
     el.result.classList.add('show');
@@ -1040,6 +1112,16 @@
     const foxyCamPressure = clamp(state.camDowntimeMs / 22000, 0, 2.8);
     state.entities.foxy.ai = clamp(state.entities.foxy.ai + foxyCamPressure * (dt / 1000) * 0.07, 0, 20);
 
+    if (state.goldenFreddyMs > 0) {
+      state.goldenFreddyMs = Math.max(0, state.goldenFreddyMs - dt);
+    } else {
+      const goldenSpawnChance = 0.0000012 * (dt / 1000);
+      if (Math.random() < goldenSpawnChance) {
+        state.goldenFreddyMs = 3600;
+        state.camGlitchMs = 700;
+      }
+    }
+
     const powerDrain = (0.053 * usage() * dt) / 1000;
     state.power = Math.max(0, state.power - powerDrain);
 
@@ -1097,7 +1179,10 @@
 
     const leftThreat = inRoom('westCorner');
     const rightThreat = inRoom('eastCorner');
-    el.warn.style.opacity = (leftThreat.length || rightThreat.length || state.foxySprintMs > 0) ? '1' : '0';
+    const goldenActive = state.goldenFreddyMs > 0;
+    const officeThreat = leftThreat.length || rightThreat.length || state.foxySprintMs > 0 || goldenActive;
+    el.warn.style.display = officeThreat ? 'block' : 'none';
+    el.warn.textContent = goldenActive ? 'GOLDEN FREDDYS ON THE LOSE' : 'OFFICE THREAT';
 
     const wakingNames = Object.entries(state.entities).filter(([, e]) => !e.active && e.wakeDelayMs <= 0).map(([name]) => name);
 
@@ -1139,7 +1224,7 @@
 
   function reset(forNextNight = false) {
     if (forNextNight && state.over && el.resultTitle.textContent === '6 AM') {
-      state.night = Math.min(6, state.night + 1);
+      state.night = Math.min(5, state.night + 1);
     }
 
     state.t = 0;
@@ -1163,6 +1248,7 @@
     state.cameraStallMs = 0;
     state.camDowntimeMs = 0;
     state.foxySprintMs = 0;
+    state.goldenFreddyMs = 0;
 
     state.entities.bonnie.room = 'stage';
     state.entities.chica.room = 'stage';
